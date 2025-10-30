@@ -1,0 +1,282 @@
+---
+title: "Renewable Energy Report"
+author: "Katherine Garcia"
+format: pdf
+execute:
+  echo: true      
+  warning: false  
+  message: false  
+---
+
+
+```{r}
+
+```
+
+
+## **Part 1:** **Defining Research Question**
+
+Chosen Question: How has renewable energy use grown from 2021 to 2023 across states? Do states with more renewable energy also have lower electricity prices? Which regions have seen the biggest growth in renewable energy use?
+
+## **Part 2: Data Preparation and Cleaning**
+
+```{r}
+
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+renew_2021<- read_csv("data/renew-use-2021.csv")
+renew_2022 <- read_csv("data/renew-use-2022.csv")
+renew_2023<-read_csv("data/renew-use-2023.csv")
+total_2021 <- read_csv("data/total-use-2021.csv")
+total_2022 <- read_csv("data/total-use-2022.csv")
+total_2023 <- read_csv("data/total-use-2023.csv")
+energyprice <- read_csv("data/av-energy-price-2021-2023.csv")
+```
+```{r}
+library(tidyr)
+standardize_cols <- function(df) {
+df %>%
+rename(
+state = State,
+energy_source = Energy_Source,
+renewable_use = starts_with("Renewable_Use")
+)
+}
+
+energy_2021 <- standardize_cols(renew_2021)
+energy_2022 <- standardize_cols(renew_2022)
+energy_2023 <- standardize_cols(renew_2023)
+
+clean_numeric_units <- function(df) {
+df %>%
+mutate(unit = case_when(str_detect(renewable_use, "kWh") ~ "kWh", str_detect(renewable_use, "MWh") ~ "MWh", TRUE ~ "none"), 
+value = str_remove_all(renewable_use, "[^0-9.]"),
+value = as.numeric(value),
+value_mwh = case_when( unit == "kWh" ~ value / 1000, TRUE ~ value)) %>%
+select(-unit, -value, -renewable_use)
+}
+
+energy_2021 <- clean_numeric_units(energy_2021)
+energy_2022 <- clean_numeric_units(energy_2022)
+energy_2023 <- clean_numeric_units(energy_2023)
+
+clean_energy_source <- function(df) {
+  df %>%
+mutate(
+energy_source = str_to_lower(energy_source),
+energy_source = str_replace_all(energy_source, " energy", ""),
+energy_source = str_replace_all(energy_source, "hydropower", "hydro")
+)
+}
+
+energy_2021 <- clean_energy_source(energy_2021)
+energy_2022 <- clean_energy_source(energy_2022)
+energy_2023 <- clean_energy_source(energy_2023)
+
+standardize_state <- function(df) {
+  df %>%
+    mutate(
+      state = str_trim(state),
+      state = str_to_upper(state)
+    )
+}
+
+energy_2021 <- standardize_state(energy_2021)
+energy_2022 <- standardize_state(energy_2022)
+energy_2023 <- standardize_state(energy_2023)
+
+energy_2021 <- energy_2021 %>% mutate(year = 2021)
+energy_2022 <- energy_2022 %>% mutate(year = 2022)
+energy_2023 <- energy_2023 %>% mutate(year = 2023)
+
+energy_2021_long <- energy_2021 %>% select(state, energy_source, value_mwh, year)
+energy_2022_long <- energy_2022 %>% select(state, energy_source, value_mwh, year)
+energy_2023_long <- energy_2023 %>% select(state, energy_source, value_mwh, year)
+
+
+energy_all_long <- bind_rows(energy_2021_long, energy_2022_long, energy_2023_long) %>%
+  arrange(state, energy_source, year)
+
+energy_all_long <- energy_all_long %>%
+  arrange(state, energy_source, year) %>%
+  group_by(state, energy_source) %>%
+  mutate(
+    value_prev = lag(value_mwh, order_by = year),          
+    yoy_growth = (value_mwh - value_prev) / value_prev * 100 
+  ) %>%
+  ungroup()
+
+```
+
+```{r}
+
+```
+```{r}
+library(tidyr)
+total_2021 <- read_csv("data/total-use-2021.csv")
+total_2022 <- read_csv("data/total-use-2022.csv")
+total_2023 <- read_csv("data/total-use-2023.csv")
+
+
+clean_energy_data <- function(df, year) {
+  df %>%
+pivot_longer(
+cols = -Energy_Source,
+names_to = "state",
+values_to = "value"
+    ) %>%
+rename(energy_source = Energy_Source) %>%
+mutate(state = str_to_upper(state),
+energy_source = str_to_lower(energy_source),
+energy_source = str_replace_all(energy_source, " ", "_"),
+energy_source = str_replace_all(energy_source, "-", "_"),
+energy_source = str_replace_all(energy_source, "†", ""),
+value = as.numeric(str_remove_all(value, "[^0-9.]")),
+year = year
+)
+}
+
+total_2021_clean <- clean_energy_data(total_2021, 2021)
+total_2022_clean <- clean_energy_data(total_2022, 2022)
+total_2023_clean <- clean_energy_data(total_2023, 2023)
+total_combined <- bind_rows(total_2021_clean, total_2022_clean, total_2023_clean)
+
+total_wide <- total_combined %>%
+pivot_wider(
+names_from = energy_source,
+values_from = value
+)
+
+total_combined <- bind_rows(
+total_2021 %>% mutate(year = 2021),
+total_2022 %>% mutate(year = 2022),
+total_2023 %>% mutate(year = 2023)
+)
+total_long <- total_combined %>%
+pivot_longer(
+cols = -c(Energy_Source, year), 
+names_to = "state",
+values_to = "value"
+)
+
+
+```
+```{r}
+```
+## **Part 3: Joining / Pivoting Datasets for Analysis**
+
+```{r}
+library(tidyr)
+clean_total_data <- function(df, year) {
+  df %>%
+rename_all(~str_to_lower(.)) %>%                  
+pivot_longer(
+cols = -energy_source,                          
+names_to = "state",
+values_to = "value"
+) %>%
+mutate(
+state = str_to_upper(state),
+energy_source = str_to_lower(energy_source),
+energy_source = str_replace_all(energy_source, " ", "_"),
+energy_source = str_replace_all(energy_source, "-", "_"),
+energy_source = str_replace_all(energy_source, "†", ""),
+value = as.numeric(str_remove_all(value, "[^0-9.]")),
+year = year
+)
+}
+
+total_2021_clean <- clean_total_data(total_2021, 2021)
+total_2022_clean <- clean_total_data(total_2022, 2022)
+total_2023_clean <- clean_total_data(total_2023, 2023)
+
+total_long <- bind_rows(total_2021_clean, total_2022_clean, total_2023_clean)
+
+
+total_wide <- total_long %>%
+  pivot_wider(
+    names_from = energy_source,
+    values_from = value
+  )
+
+
+
+```
+
+```{r}
+library(tidyr)
+
+energyprice_raw <- read_csv(
+"data/av-energy-price-2021-2023.csv",
+col_names = FALSE,
+skip = 4,
+show_col_types = FALSE
+)
+energyprice_raw <- energyprice_raw %>%
+separate(X1, into = c("state", "X2021", "X2022", "X2023"), sep = ",") %>%
+mutate(
+state = str_to_upper(str_trim(state)),
+across(c(X2021, X2022, X2023), ~ str_remove_all(., "[^0-9.]")),  # remove $, words, symbols
+across(c(X2021, X2022, X2023), as.numeric)
+) %>%
+rename(`2021` = X2021, `2022` = X2022, `2023` = X2023)
+energyprice_long <- energyprice_raw %>%
+pivot_longer(cols = c(`2021`, `2022`, `2023`),
+names_to = "year",
+values_to = "price")
+
+
+
+
+
+```
+
+```{r}
+**Part 3: Joining / Pivoting Datasets for Analysis**
+```
+```{r}
+library(tidyr)
+library(maps)
+library(ggplot2)
+energy_all_long_map <- energy_all_long %>%
+filter(energy_source %in% "total_renewable_energy") %>%
+mutate(
+state_lower = tolower(state) 
+)
+
+
+us_states <- map_data("state")
+
+energy_2023_map <- energy_all_long_map %>% filter(year == 2023)
+map_data_2023 <- us_states %>%
+left_join(energy_2023_map, by = c("region" = "state_lower"))
+
+
+ggplot(map_data_2023, aes(long, lat, group = group, fill = value_mwh)) +
+geom_polygon(color = "black") +
+scale_fill_viridis_c(option = "plasma", name = "Renewable MWh") +
+coord_fixed(1.3) +
+theme_minimal() +
+labs(
+title = "Renewable Energy Use by State (2023)",
+subtitle = "Total renewable energy generation in MWh",
+caption = "Data source: U.S. Energy Data"
+)
+
+```
+
+Analysis of Renewable Energy Growth Across States
+Key findings:
+Most states show growth in total renewable energy usage from 2021 to 2023.
+States with large land areas and natural resources lead in total renewable energy generation.
+Energy sources by regions in the country:
+The West and Midwest show strong usage of solar and wind energy 
+The Northeast and Southeast have moderate renewable energy use, leading with hydro and biomass usage.
+States like Montana, Idaho, and Wyoming with more mountain’s terrain rely mostly on hydro and wind. These states show moderate growth.
+Smaller states and urbanized regions like DC, Delaware, Rhode Island have lower total renewable energy use.
+Patterns by Energy Source:
+Wind and solar energy are driving the majority of cleaning energy growth across states.
+Hydro remains significant in states with large rivers, but it has limited expansion potential as it depends on state resources.
+Biomass and geothermal contribute a smaller scale
